@@ -24,15 +24,27 @@
 
 #include <stdio.h>	/* getline()	*/
 #include <stdlib.h>	/* atof()	*/
+#include <unistd.h>	/* getopt()	*/
 #include <math.h>
 
 #include "error.h"
-#include "voltlogger_analyzer.h"
+#include "analyzer.h"
+
+enum functype {
+	FT_SIN
+};
+typedef enum functype functype_t;
+
+static char *const functypes[] = {
+	[FT_SIN] = "sin",
+	NULL
+};
+
 
 
 int main(int argc, char *argv[]) {
-	double array[PARSER_MAXELEMENTS];
-	size_t array_len = 0;
+	functype_t functype = FT_SIN;
+	float frequency = 50;
 
 	// Initializing output subsystem
 	{
@@ -44,6 +56,26 @@ int main(int argc, char *argv[]) {
 		error_init(&output_method, &output_quiet, &output_verbosity, &output_debuglevel);
 	}
 
+	// Parsing arguments
+	char c;
+	while ((c = getopt (argc, argv, "f:F:")) != -1) {
+		char *arg;
+		arg = optarg;
+
+		switch (c)
+		{
+			case 'f': {
+				char *value;
+				functype = getsubopt(&arg, functypes, &value);
+				break;
+			}
+			case 'F':
+				frequency = atof(optarg);
+				break;
+			default:
+				abort ();
+		}
+	}
 
 	return 0;
 }

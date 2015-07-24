@@ -26,7 +26,7 @@
 
 #include "error.h"
 #include "malloc.h"
-#include "voltlogger_analyzer.h"
+#include "analyzer.h"
 
 
 

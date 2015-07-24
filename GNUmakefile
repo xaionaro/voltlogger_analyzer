@@ -23,7 +23,7 @@ objs=\
 error.o\
 malloc.o\
 pthreadex.o\
-voltlogger_analyzer.o\
+analyzer.o\
 main.o\
 
 binary=voltlogger_analyzer
