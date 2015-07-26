@@ -17,5 +17,20 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#ifndef __ANALYZER_ROOT_H
+#define __ANALYZER_ROOT_H
 
-extern void vl_analyze_sin(FILE *in, FILE *out, float frequency);
+#include <stdint.h>
+
+extern void root_analyze_sin(FILE *in, FILE *out, float frequency);
+
+struct history_item {
+	uint64_t		 unixTSNano;
+	uint64_t		 sensorTS;
+	uint32_t		 value;
+	void			*procdata;
+};
+typedef struct history_item history_item_t;
+
+#endif
+

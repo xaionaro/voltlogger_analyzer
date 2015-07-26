@@ -15,7 +15,11 @@
     
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
+ 
+*/
+#include <stdio.h>	/* FILE		*/
+#include <stdint.h>	/* uint64_t	*/
 
+extern uint64_t get_uint64(FILE *i_f);
+extern uint32_t get_uint32(FILE *i_f);
 
-extern void vl_analyze_sin(FILE *in, FILE *out, float frequency);

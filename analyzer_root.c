@@ -30,24 +30,17 @@
 
 #include "error.h"
 #include "malloc.h"
-#include "analyzer.h"
+#include "analyzer_root.h"
 #include "binary.h"
+#include "libfitter.h"
 
 #define MAX_HISTORY (1 << 24)
 
-struct history_item {
-	uint64_t		 unixTSNano;
-	uint64_t		 sensorTS;
-	uint32_t		 value;
-	void			*procdata;
-};
-typedef struct history_item history_item_t;
 
-typedef int (*vl_checkfunct_t)(history_item_t *value_history, uint64_t *value_history_filled_p, void *arg);
+typedef int (*root_checkfunct_t)(history_item_t *value_history, uint64_t *value_history_filled_p, void *arg);
 
-#define SIN_NUM_STAGES 16
-
-int vl_realcheck_sin(history_item_t *value_history, uint64_t value_history_filled, float frequency_p) {
+/*
+int root_realcheck_sin(history_item_t *value_history, uint64_t value_history_filled, float frequency_p) {
 	history_item_t *stages[SIN_NUM_STAGES], *p, *e;
 
 	p =  value_history;
@@ -80,28 +73,31 @@ int vl_realcheck_sin(history_item_t *value_history, uint64_t value_history_fille
 
 	return 0;
 }
+*/
 
-int vl_check_sin(history_item_t *value_history, uint64_t *value_history_filled_p, void *_frequency_p) {
+int root_check_sin(history_item_t *value_history, uint64_t *value_history_filled_p, void *_frequency_p) {
 	float frequency = *(float *)_frequency_p;
 
 	history_item_t *cur = &value_history[*value_history_filled_p - 1];
 
-	uint64_t expectedEndOffset_unixTSNano = (uint64_t)(1E9 /* nanosecs in sec */ / frequency);
+	uint64_t expectedEndOffset_unixTSNano = (uint64_t)(1 * 1E9 /* nanosecs in sec */ / frequency);
 	uint64_t     currentOffset_unixTSNano = cur->unixTSNano - value_history[0].unixTSNano;
 
 	int rc = 0;
 	if ( currentOffset_unixTSNano  >=  expectedEndOffset_unixTSNano ) {
-
-		rc = vl_realcheck_sin(value_history, *value_history_filled_p, frequency);
+		printf("_Z6fitterP12history_itemmf -> %lf %lu\n", _Z6fitterP12history_itemmf(value_history, *value_history_filled_p, frequency), value_history->unixTSNano);
+		//rc = root_realcheck_sin(value_history, *value_history_filled_p, frequency);
 		*value_history_filled_p = 0;
 	}
 
 	return rc;
 }
 
-static inline void vl_analize(FILE *i_f, FILE *o_f, void *arg, vl_checkfunct_t checkfunct) {
+static inline void root_analize(FILE *i_f, FILE *o_f, void *arg, root_checkfunct_t checkfunct) {
 	history_item_t *value_history, *history_item_ptr;
 	uint64_t        value_history_filled = 0;
+
+	_Z11fitter_initm(MAX_HISTORY);
 
 	value_history = xcalloc(MAX_HISTORY, sizeof(*value_history));
 
@@ -123,15 +119,17 @@ static inline void vl_analize(FILE *i_f, FILE *o_f, void *arg, vl_checkfunct_t c
 
 	free(value_history);
 
+	_Z13fitter_deinitv();
+
 	return;
 }
 
-void vl_analyze_sin(FILE *i_f, FILE *o_f, float frequency)
+void root_analyze_sin(FILE *i_f, FILE *o_f, float frequency)
 {
 	float *frequency_p = xmalloc(sizeof(float));
 	*frequency_p = frequency;
 
-	vl_analize(i_f, o_f, frequency_p, vl_check_sin);
+	root_analize(i_f, o_f, frequency_p, root_check_sin);
 
 	free(frequency_p);
 	return;

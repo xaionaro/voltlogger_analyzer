@@ -18,4 +18,23 @@
  */
 
 
-extern void vl_analyze_sin(FILE *in, FILE *out, float frequency);
+#include <assert.h>	/* assert()	*/
+
+#include "binary.h"
+
+
+#define DECLARE_GET_X_t(x) 				\
+	x ## _t get_ ## x (FILE *i_f) {		\
+		x ## _t r;				\
+							\
+		if (fread(&r, sizeof(r), 1, i_f) < 1)	\
+			assert (!ferror(i_f));		\
+							\
+		return r;				\
+	}
+
+DECLARE_GET_X_t(uint64);
+DECLARE_GET_X_t(uint32);
+//DECLARE_GET_X_t(uint16);
+//DECLARE_GET_X_t(uint8);
+

@@ -39,3 +39,7 @@
 #define MAX(a, b) (((a)>(b)) ? (a) : (b))
 #define MIN(a, b) (((a)<(b)) ? (a) : (b))
 
+#define STDIN		0
+#define STDOUT		1
+#define STDERR		2
+

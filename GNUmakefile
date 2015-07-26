@@ -14,7 +14,7 @@ CARCHFLAGS ?= -march=native
 
 LIBS := -lm
 LDSECFLAGS ?= -Xlinker -zrelro
-LDFLAGS += $(LDSECFLAGS) -pthread
+LDFLAGS += $(LDSECFLAGS) -pthread -flto -L. -lfitter_C
 INC := $(INC)
 
 INSTDIR = $(DESTDIR)$(PREFIX)
@@ -23,8 +23,11 @@ objs=\
 error.o\
 malloc.o\
 pthreadex.o\
-analyzer.o\
+analyzer_root.o\
 main.o\
+binary.o\
+libfitter_C.so
+
 
 binary=voltlogger_analyzer
 
@@ -39,9 +42,11 @@ all: $(objs)
 debug:
 	$(CC) $(CARCHFLAGS) -D_DEBUG_SUPPORT $(DEBUGCFLAGS) $(INC) $(LDFLAGS) *.c $(LIBS) -o $(binary)
 
+libfitter_C.so:
+	echo '.L libfitter.C+' | root -l
 
 clean:
-	rm -f $(binary) *.o
+	rm -f $(binary) $(objs)
 
 distclean: clean
 

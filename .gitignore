@@ -1,2 +1,5 @@
 *.o
+*.orig
+*.d
+*.so
 voltlogger_analyzer

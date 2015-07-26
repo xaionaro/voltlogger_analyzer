@@ -28,7 +28,7 @@
 #include <math.h>
 
 #include "error.h"
-#include "analyzer.h"
+#include "analyzer_root.h"
 
 enum functype {
 	FT_SIN
@@ -75,6 +75,15 @@ int main(int argc, char *argv[]) {
 			default:
 				abort ();
 		}
+	}
+
+	switch (functype) {
+		case FT_SIN:
+			root_analyze_sin(stdin, stdout, frequency);
+			break;
+		default:
+			fprintf(stderr, "Unknown approximation function\n");
+			abort ();
 	}
 
 	return 0;
