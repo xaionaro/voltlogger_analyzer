@@ -25,5 +25,5 @@
 extern void   _Z11fitter_initm   (uint64_t history_size);
 extern void   _Z13fitter_deinitv ();
 extern double _Z7fitfuncPdS_     ( double *x, double *par );
-extern double _Z6fitterP12history_itemmf ( history_item_t *history, uint64_t filled, float frequency );
+extern double _Z6fitterP12history_itemmfPd ( history_item_t *history, uint64_t filled, float frequency, double *par );
 

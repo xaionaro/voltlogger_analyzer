@@ -77,16 +77,35 @@ int root_realcheck_sin(history_item_t *value_history, uint64_t value_history_fil
 
 int root_check_sin(history_item_t *value_history, uint64_t *value_history_filled_p, void *_frequency_p) {
 	float frequency = *(float *)_frequency_p;
+	double par[4];
 
-	history_item_t *cur = &value_history[*value_history_filled_p - 1];
+	//history_item_t *cur = &value_history[*value_history_filled_p - 1];
 
 	uint64_t expectedEndOffset_unixTSNano = (uint64_t)(1 * 1E9 /* nanosecs in sec */ / frequency);
-	uint64_t     currentOffset_unixTSNano = cur->unixTSNano - value_history[0].unixTSNano;
+//	uint64_t     currentOffset_unixTSNano = cur->unixTSNano - value_history[0].unixTSNano;
+	uint64_t     currentOffset_unixTSNano = *value_history_filled_p * 50000;
 
 	int rc = 0;
 	if ( currentOffset_unixTSNano  >=  expectedEndOffset_unixTSNano ) {
-		printf("_Z6fitterP12history_itemmf -> %lf %lu\n", _Z6fitterP12history_itemmf(value_history, *value_history_filled_p, frequency), value_history->unixTSNano);
+		double error = _Z6fitterP12history_itemmfPd(value_history, *value_history_filled_p, frequency, par);
+		printf("_Z6fitterP12history_itemmf -> %lf %lu\n", error, value_history->unixTSNano);
 		//rc = root_realcheck_sin(value_history, *value_history_filled_p, frequency);
+
+		if (error > 13000)
+			rc = 1;
+
+		{
+			uint64_t i;
+			i = 0;
+			while (i < *value_history_filled_p) {
+				printf("Z\t%lu\t%lu\t%u\t%lf\t%lf\t%lf\t%lf\t%lf\n", value_history[i].unixTSNano, value_history[i].sensorTS, value_history[i].value, error, par[0], par[1], par[2], par[3]);
+				i++;
+			}
+		}
+
+//		frequency = (float)2*M_PI / (float)par[1];
+//		*(float *)_frequency_p = frequency;
+
 		*value_history_filled_p = 0;
 	}
 

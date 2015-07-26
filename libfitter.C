@@ -21,6 +21,7 @@
 #include <TGraph.h>
 #include <TF1.h>
 #include <math.h>
+#include <stdlib.h>
 
 #include "malloc.h"
 #include <stdint.h>
@@ -54,7 +55,7 @@ fitter_deinit() {
 }
 
 double
-fitter(history_item_t *history, uint64_t filled, float frequency)
+fitter(history_item_t *history, uint64_t filled, float frequency, double *par)
 {
 	//TGraph gr(filename, "%*lg %lg %lg");
 	uint64_t i;
@@ -68,7 +69,8 @@ fitter(history_item_t *history, uint64_t filled, float frequency)
 
 	i = 0;
 	while (i < filled) {
-		x[i] = history[i].unixTSNano;
+		//x[i] = history[i].unixTSNano;
+		x[i] = history[i].sensorTS;
 		y[i] = history[i].value;
 
 		if (y[i] < yMin)
@@ -85,39 +87,64 @@ fitter(history_item_t *history, uint64_t filled, float frequency)
 
 	f1->SetRange(x[0], x[filled-1]);
 
-	uint64_t unixTSNanoDiff = x[filled-1] - x[0];
-	double   lambda = (double)2*M_PI / frequency / 1E9;
-	double   amp    = (yMax - yMin) / 2;
-	//double   avg    = (yMax + yMin) / 2;
-	double   avg = sum / filled;
-	static double phase = -1;
+	uint64_t TSDiff       = x[filled-1] - x[0];
+	uint64_t unixTSDiff   = history[filled-1].unixTSNano - history[0].unixTSNano;
+	double   lambda       = (double)2*M_PI / TSDiff;
+	static double amp     = -1;
+	//double   avg          = (yMax + yMin) / 2;
+	static double avg_pre;
+	avg_pre = sum / filled;
+	static double avg     = -1;
+	static double phase   = -1;
 
 
 	//TF1 f1("f1", fitfunc, x[0], x[filled-1], 4);
 
-	f1->SetParameters(amp, lambda, phase < 0 ? 0 : phase, avg);
-	f1->SetParLimits(0, amp*0.7, amp*1.3);
-	f1->SetParLimits(1, lambda*0.9, lambda*1.1);
+	double amp_pre = (yMax - yMin) / 2;
+//	f1->SetErrors(amp*0.01, lambda*0.01, phase*0.01, avg*0.01);
+	f1->SetParameters(amp < 0 ? amp_pre : amp, lambda, phase < 0 ? 0 : phase, avg < 0 ? avg_pre : avg);
+	//f1->SetParameters(amp_pre, lambda, phase < 0 ? 0 : phase, avg);
+	if (amp < 0) {
+		f1->SetParLimits(0, amp_pre*0.9, amp_pre*1.1);
+	} else {
+		f1->SetParLimits(0, amp*0.9999, amp*1.0001);
+	}
+	//f1->SetParLimits(1, lambda*0.9, lambda*1.1);
+	f1->SetParLimits(1, lambda*0.9999, lambda*1.0001);
 	if (phase < 0) {
 		f1->SetParLimits(2, 0, 2*M_PI);
 	} else {
-		f1->SetParLimits(2, phase*0.9, phase*1.1);
+		f1->SetParLimits(2, phase-(0.0001*2*M_PI), phase+(0.0001*2*M_PI));
 	}
-	f1->SetParLimits(3, avg, avg);
+	if (avg < 0) {
+		f1->SetParLimits(3, avg_pre*0.9999, avg_pre*1.0001);
+	} else {
+		f1->SetParLimits(3, avg*0.9999, avg*1.0001);
+	}
 
-	gr->Fit(f1, "WMROQ");
+	gr->Fit(f1, "WROQ");
+
 /*
+	printf("amp = %e (%lu)\n", amp, (yMax - yMin) / 2);
+
 	printf("chi2/ndf = %lf\n", f1->GetChisquare() / f1->GetNDF());
 	printf("probability = %lf\n", f1->GetProb());
 	printf("lambda = %e\n", lambda);
-	printf("amp = %e\n", amp);
 	printf("avg = %e\n", avg);
 	printf("par0 = %e\n", f1->GetParameter(0));
 	printf("par1 = %e\n", f1->GetParameter(1));
 	printf("par2 = %e\n", f1->GetParameter(2));
 	printf("par3 = %e\n", f1->GetParameter(3));
 */
+	if (par != NULL) {
+		par[0] = f1->GetParameter(0);
+		par[1] = f1->GetParameter(1);//*(double)TSDiff/(double)unixTSDiff;
+		par[2] = f1->GetParameter(2);
+		par[3] = f1->GetParameter(3);
+	}
 
+	amp   = f1->GetParameter(0);
 	phase = f1->GetParameter(2);
+	avg   = f1->GetParameter(3);
 	return f1->GetChisquare() / f1->GetNDF();
 }
