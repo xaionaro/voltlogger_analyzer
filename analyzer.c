@@ -46,40 +46,101 @@ typedef struct history_item history_item_t;
 
 typedef int (*vl_checkfunct_t)(history_item_t *value_history, uint64_t *value_history_filled_p, char *checkpointfile, int concurrency, void *arg, double error_threshold, char realtime);
 
-#define SIN_NUM_STAGES 16
+#define SIN_PHASE_PARTS 3
 
 int vl_realcheck_sin(history_item_t *value_history, uint64_t value_history_filled, char *checkpointfile, int concurrency, float frequency_p, double error_threshold, char realtime) {
-	history_item_t *stages[SIN_NUM_STAGES], *p, *e;
+	history_item_t *p, *e;
 
 	p =  value_history;
 	e = &value_history[value_history_filled-1];
 
 	uint64_t sensorTS_start     = p->sensorTS;
 	uint64_t sensorTSDiff_total = e->sensorTS - sensorTS_start;
-
-	int stage_old = -1;
+	double y_sum = 0;
 
 	while (p <= e) {
-		uint64_t sensorTSDiff_cur = p->sensorTS - sensorTS_start;
-
-		int stage = sensorTSDiff_cur*SIN_NUM_STAGES / sensorTSDiff_total;
-
-		if (stage >= SIN_NUM_STAGES)
-			stage = SIN_NUM_STAGES-1;
-
-		if (stage != stage_old) {
-			if (stage != stage_old + 1) {
-				return 0;
-			}
-			printf("%i %u\n", stage, p->value);
-			stages[stage] = p;
-			stage_old = stage;
-		}
+		y_sum += p->value;
 
 		p++;
 	}
 
-	(void)stages;
+
+	double y_avg = (double)y_sum / (double)value_history_filled;
+	double y_int = 0;
+
+	history_item_t *p_old = p = value_history;
+
+	while (++p <= e) {
+		double y_diff = p->value - y_avg;
+		y_int += y_diff*y_diff * (p->sensorTS - p_old->sensorTS);
+
+		p_old = p;
+	}
+
+	y_int *= 2*M_PI / sensorTSDiff_total;
+
+	double lambda = (double)2*M_PI / sensorTSDiff_total;
+	double amp    = sqrt(y_int / M_PI);
+
+	// f(x) =  amp * sin(lambda*x + phase) + avg
+	double phase;
+
+	p_old = p = value_history;
+	phase = 0;
+
+/*	//TODO: Complete this method of phase calculation (instead of iteration method below)
+
+	while (++p <= e) {
+		if ((p_old->value - y_avg) * (p->value - y_avg) < 0) {
+			double avg_value = (p->value + p_old->value) / 2;
+
+			if (p_old->value < y_avg)
+				phase = -lambda * avg_value;
+			else
+				phase =  lambda * avg_value;
+
+			break;
+		}
+
+		p_old = p;
+	}
+*/
+
+	double sqdeviation_min = 1E100;
+
+	double phase_add_best = M_PI;
+
+	double scan_interval = 2*M_PI;
+	while (scan_interval > 1E-3) {
+		double phase_add = -scan_interval;
+		double phase_add_best_add = 0;
+		//fprintf(stderr, "scanning: %le -> %le\n", phase_add_best + phase_add, phase_add_best + scan_interval);
+		while (phase_add_best + phase_add < phase_add_best + scan_interval) {
+			double sqdeviation = 0;
+			p = value_history;
+			while (p <= e) {
+				double y_calc = amp*sin(lambda*p->sensorTS + phase_add_best + phase + phase_add) + y_avg;
+
+				double y_diff = y_calc - (double)p->value;
+				//fprintf(stderr, "Y: %li %i %lf %le\n", p->sensorTS, p->value, y_calc, y_diff);
+
+				sqdeviation += y_diff*y_diff;
+				p++;
+			}
+			//fprintf(stderr, "try: %le: %le\n", phase_add_best + phase_add, sqdeviation);
+			if (sqdeviation < sqdeviation_min) {
+				sqdeviation_min    = sqdeviation;
+				phase_add_best_add = phase_add;
+			}
+
+			phase_add += scan_interval/SIN_PHASE_PARTS;
+		}
+		phase_add_best += phase_add_best_add;
+		scan_interval /= SIN_PHASE_PARTS;
+		//fprintf(stderr, "phase_add_best == %le (%le). sqdeviation_min == %le. scan_interval == %le\n", phase_add_best, phase_add_best_add, sqdeviation_min, scan_interval);
+	}
+
+	fprintf(stderr, "%le %le %le %le %le\n", amp, lambda, phase, y_avg, sqdeviation_min/value_history_filled);
 
 	return 0;
 }
