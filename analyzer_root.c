@@ -134,8 +134,8 @@ int root_realcheck_sin(int proc_id, int concurrency, char *checkpointpath, histo
 		procs_meta->canprint_proc %= concurrency;
 	}
 
-//		frequency = (float)2*M_PI / (float)par[1];
-//		*(float *)_frequency_p = frequency;
+//	frequency = (float)2*M_PI / (float)par[1];
+//	*(float *)_frequency_p = frequency;
 
 	return rc;
 }
