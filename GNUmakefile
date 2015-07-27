@@ -43,7 +43,7 @@ debug:
 	$(CC) $(CARCHFLAGS) -D_DEBUG_SUPPORT $(DEBUGCFLAGS) $(INC) $(LDFLAGS) *.c $(LIBS) -o $(binary)
 
 libfitter_C.so:
-	echo '.L libfitter.C+' | root -l
+	echo '.L libfitter.C+' | root -b
 
 clean:
 	rm -f $(binary) $(objs)
