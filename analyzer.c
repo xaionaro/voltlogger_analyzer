@@ -78,6 +78,8 @@ int vl_realcheck_sin(history_item_t *value_history, uint64_t value_history_fille
 		p++;
 	}
 
+	(void)stages;
+
 	return 0;
 }
 

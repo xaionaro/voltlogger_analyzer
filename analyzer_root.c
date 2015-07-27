@@ -91,10 +91,10 @@ int root_check_sin(history_item_t *value_history, uint64_t *value_history_filled
 		printf("_Z6fitterP12history_itemmf -> %lf %lu\n", error, value_history->unixTSNano);
 		//rc = root_realcheck_sin(value_history, *value_history_filled_p, frequency);
 
-		if (error > 13000)
+		if (error > 1000)
 			rc = 1;
 
-		{
+		if (rc) {
 			uint64_t i;
 			i = 0;
 			while (i < *value_history_filled_p) {

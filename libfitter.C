@@ -143,8 +143,10 @@ fitter(history_item_t *history, uint64_t filled, float frequency, double *par)
 		par[3] = f1->GetParameter(3);
 	}
 
-	amp   = f1->GetParameter(0);
-	phase = f1->GetParameter(2);
-	avg   = f1->GetParameter(3);
+	if (f1->GetChisquare() / f1->GetNDF() < 100000) {
+		amp   = f1->GetParameter(0);
+		phase = f1->GetParameter(2);
+		avg   = f1->GetParameter(3);
+	}
 	return f1->GetChisquare() / f1->GetNDF();
 }
