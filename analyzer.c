@@ -149,13 +149,13 @@ int vl_realcheck_sin(history_item_t *value_history, uint64_t value_history_fille
 int vl_check_sin(history_item_t *value_history, uint64_t *value_history_filled_p, char *checkpointfile, int concurrency, void *_frequency_p, double error_threshold, char realtime) {
 	float frequency = *(float *)_frequency_p;
 
-	history_item_t *cur = &value_history[*value_history_filled_p - 1];
+	//history_item_t *cur = &value_history[*value_history_filled_p - 1];
 
-	uint64_t expectedEndOffset_unixTSNano = (uint64_t)(1E9 /* nanosecs in sec */ / frequency);
-	uint64_t     currentOffset_unixTSNano = cur->row.unixTSNano - value_history[0].row.unixTSNano;
+	uint64_t expectedEndOffset = (uint64_t)(1E9 /* nanosecs in sec */ / frequency);
+	uint64_t     currentOffset = *value_history_filled_p * 50000;
 
 	int rc = 0;
-	if ( currentOffset_unixTSNano  >=  expectedEndOffset_unixTSNano ) {
+	if ( currentOffset  >=  expectedEndOffset ) {
 
 		rc = vl_realcheck_sin(value_history, *value_history_filled_p, checkpointfile, concurrency, frequency, error_threshold, realtime);
 		*value_history_filled_p = 0;
