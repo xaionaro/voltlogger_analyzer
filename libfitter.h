@@ -22,7 +22,7 @@
 
 #include "analyzer_root.h"
 
-extern void   _Z11fitter_initm   (uint64_t history_size);
+extern void   _Z11fitter_initmPd (uint64_t history_size, double *par);
 extern void   _Z13fitter_deinitv ();
 extern double _Z7fitfuncPdS_     ( double *x, double *par );
 extern double _Z6fitteriP12history_itemmfPd ( int thread_id, history_item_t *history, uint64_t filled, float frequency, double *par );

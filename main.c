@@ -26,6 +26,7 @@
 #include <stdlib.h>	/* atof()	*/
 #include <unistd.h>	/* getopt()	*/
 #include <math.h>
+#include <assert.h>
 
 #include "error.h"
 #include "analyzer_root.h"
@@ -47,6 +48,8 @@ int main(int argc, char *argv[]) {
 	char realtime = 0;
 	float frequency = 50;
 	int concurrency = 1;
+	char *checkpointpath = NULL;
+	FILE *input = stdin;
 
 	// Initializing output subsystem
 	{
@@ -60,7 +63,7 @@ int main(int argc, char *argv[]) {
 
 	// Parsing arguments
 	char c;
-	while ((c = getopt (argc, argv, "rf:F:c:")) != -1) {
+	while ((c = getopt (argc, argv, "ri:f:F:c:C:")) != -1) {
 		char *arg;
 		arg = optarg;
 
@@ -80,6 +83,12 @@ int main(int argc, char *argv[]) {
 			case 'c':
 				concurrency = atoi(optarg);
 				break;
+			case 'C':
+				checkpointpath = arg;
+				break;
+			case 'i':
+				assert ((input = fopen(arg, "r")) != NULL);
+				break;
 			default:
 				abort ();
 		}
@@ -87,7 +96,7 @@ int main(int argc, char *argv[]) {
 
 	switch (functype) {
 		case FT_SIN:
-			root_analyze_sin(stdin, stdout, concurrency, frequency, 50, realtime);
+			root_analyze_sin(input, stdout, checkpointpath, concurrency, frequency, 50, realtime);
 			break;
 		default:
 			fprintf(stderr, "Unknown approximation function\n");

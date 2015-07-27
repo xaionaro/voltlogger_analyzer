@@ -34,6 +34,7 @@
 #include <sys/wait.h>	/* waitpid()	*/
 #include <errno.h>	/* errno	*/
 #include <pthread.h>	/* PTHREAD_MUTEX_INITIALIZER */
+#include <sys/prctl.h>	/* prctl()	*/
 
 
 #include "configuration.h"
@@ -47,7 +48,7 @@
 #define MAX_HISTORY (1 << 16)
 
 
-typedef int (*root_checkfunct_t)(history_item_t *value_history, uint64_t *value_history_filled_p, int concurrency, double error_threshold, void *arg);
+typedef int (*root_checkfunct_t)(history_item_t *value_history, uint64_t *value_history_filled_p, char *checkpointpath, int concurrency, double error_threshold, void *arg);
 
 
 struct root_realcheckproc_sin_procmeta {
@@ -68,7 +69,14 @@ struct root_realcheckproc_sin_procmetas {
 };
 volatile struct root_realcheckproc_sin_procmetas *procs_meta;
 
-int root_realcheck_sin(int proc_id, int concurrency, history_item_t *value_history, uint64_t value_history_filled, double error_threshold, float frequency) {
+struct checkpoint {
+	double par[4];
+	uint64_t unixTSNano;
+	uint64_t statistics_events;
+};
+typedef struct checkpoint checkpoint_t;
+
+int root_realcheck_sin(int proc_id, int concurrency, char *checkpointpath, history_item_t *value_history, uint64_t value_history_filled, double error_threshold, float frequency) {
 	double par[4];
 	int rc;
 
@@ -77,7 +85,7 @@ int root_realcheck_sin(int proc_id, int concurrency, history_item_t *value_histo
 		exit(-1);
 	}*/
 
-	static uint64_t statistics_events = 0;
+	//static uint64_t statistics_events = 0;
 	double error = _Z6fitteriP12history_itemmfPd(0, value_history, value_history_filled, frequency, par);
 
 	if (error > error_threshold)
@@ -87,16 +95,38 @@ int root_realcheck_sin(int proc_id, int concurrency, history_item_t *value_histo
 		procs_meta->statistics_events++;
 	}
 
-	printf("_Z6fitterP12history_itemmf -> %lf %lu %lu\n", error, value_history->unixTSNano, procs_meta->statistics_events);
+	printf("_Z6fitterP12history_itemmf -> %lf %lu %lu\n", error, value_history->row.unixTSNano, procs_meta->statistics_events);
 
-	if (rc && statistics_events > 10000) {
+
+	if (proc_id == 0) {
+		if ((procs_meta->statistics_events & 0xff) == 0) {
+			if (checkpointpath != NULL) {
+				checkpoint_t checkpoint;
+				FILE *checkpointfile;
+				memcpy(checkpoint.par, par, sizeof(par));
+				checkpoint.unixTSNano        = value_history[value_history_filled-1].row.unixTSNano;
+				checkpoint.statistics_events = procs_meta->statistics_events;
+				fprintf(stderr, "Saving a checkpoint: %lu\n", checkpoint.unixTSNano);
+				//assert ( (checkpointfile = tmpfile()) != NULL );
+				checkpointfile = fopen(checkpointpath, "w");
+				if (checkpointfile == NULL) {
+					fprintf(stderr, "Cannot open file \"%s\" for writing: %s\n", checkpointpath, strerror(errno));
+					abort ();
+				}
+				assert ( fwrite(&checkpoint, sizeof(checkpoint), 1, checkpointfile) >= 1 );
+				fclose (checkpointfile);
+			}
+		}
+	}
+
+	if (rc && procs_meta->statistics_events > 10000) {
 		uint64_t i;
 		i = 0;
 
 		while (proc_id != procs_meta->canprint_proc);
 
 		while (i < value_history_filled) {
-			printf("Z\t%lu\t%lu\t%u\t%lf\t%lf\t%lf\t%lf\t%lf\n", value_history[i].unixTSNano, value_history[i].sensorTS, value_history[i].value, error, par[0], par[1], par[2], par[3]);
+			printf("Z\t%lu\t%lu\t%u\t%lf\t%lf\t%lf\t%lf\t%lf\n", value_history[i].row.unixTSNano, value_history[i].row.sensorTS, value_history[i].row.value, error, par[0], par[1], par[2], par[3]);
 			i++;
 		}
 
@@ -114,9 +144,16 @@ pthread_mutex_t masterprocess_lock = PTHREAD_MUTEX_INITIALIZER;
 
 void worker_finished(int sig) {
 	pthread_mutex_unlock(&masterprocess_lock);
+	return;
 }
 
-int root_check_sin(history_item_t *value_history, uint64_t *value_history_filled_p, int concurrency, double error_threshold, void *_frequency_p) {
+void worked_died(int sig) {
+	fprintf(stderr, "Child died\n");
+	abort ();
+	return;
+}
+
+int root_check_sin(history_item_t *value_history, uint64_t *value_history_filled_p, char *checkpointpath,int concurrency, double error_threshold, void *_frequency_p) {
 	float frequency = *(float *)_frequency_p;
 	//double par[4];
 	static int concurrency_current = 0;
@@ -165,7 +202,7 @@ int root_check_sin(history_item_t *value_history, uint64_t *value_history_filled
 			concurrency_current++;
 		} else {
 			//fprintf(stderr, "Running the fitting in the master process\n");
-			root_realcheck_sin(0, 1, value_history, *value_history_filled_p, error_threshold, frequency);
+			root_realcheck_sin(0, 1, checkpointpath, value_history, *value_history_filled_p, error_threshold, frequency);
 		}
 		*value_history_filled_p = 0;
 	}
@@ -193,7 +230,7 @@ void worker_start(int sig) {
 	pthread_mutex_unlock(&thisworker_lock);
 }
 
-int worker(int proc_id, int concurrency) {
+int worker(int proc_id, int concurrency, char *checkpointpath) {
 	volatile uint64_t counter;
 	volatile struct root_realcheckproc_sin_procmeta *procmeta = &procs_meta->p[proc_id];
 	parent_pid = getppid();
@@ -203,7 +240,7 @@ int worker(int proc_id, int concurrency) {
 	procs_meta->p[proc_id].rc = 0;
 
 	pthread_mutex_lock(&thisworker_lock);
-	//fprintf(stderr, "Worker #%i Initialized.\n", proc_id);
+	fprintf(stderr, "Worker #%i Initialized (checkpointpath: \"%s\").\n", proc_id, checkpointpath);
 
 	while (1) {
 		counter = 0;
@@ -214,25 +251,124 @@ int worker(int proc_id, int concurrency) {
 						return 0;
 		//fprintf(stderr, "Worker #%i: I have a job.\n", proc_id);
 
-		procmeta->rc = root_realcheck_sin(proc_id, concurrency, (void *)procmeta->value_history, procmeta->value_history_filled, procmeta->error_threshold, procmeta->frequency);
+		procmeta->rc = root_realcheck_sin(proc_id, concurrency, checkpointpath, (void *)procmeta->value_history, procmeta->value_history_filled, procmeta->error_threshold, procmeta->frequency);
 		kill(parent_pid, SIGUSR1);
 	}
 
 	return 0;
 }
 
-void root_analize(FILE *i_f, FILE *o_f, int concurrency, void *arg, root_checkfunct_t checkfunct, double error_threshold, char realtime) {
+int seekto_unixTSNano(FILE *i_f, uint64_t unixTSNano) {
+	uint64_t unixTSNano_s, unixTSNano_e, unixTSNano_c;
+	int64_t  unixTSNano_diff, unixTSNano_diff_req;
+	int iterations;
+	double scale;
+
+	long pos = 0;
+
+
+	assert (fseek(i_f, 0,					SEEK_SET) != -1);
+
+	unixTSNano_s = get_uint64(i_f, 0);
+	
+	assert (fseek(i_f, 0,					SEEK_END) != -1);
+	long pos_end = ftell(i_f) / sizeof(history_item_row_t);
+
+	pos_end--;
+
+	assert (fseek(i_f, pos_end*sizeof(history_item_row_t),SEEK_SET) != -1);
+
+	unixTSNano_e    = get_uint64(i_f, 0);
+
+	unixTSNano_diff = (int64_t)unixTSNano_e - (int64_t)unixTSNano_s;
+	scale = (double)pos_end / (double)unixTSNano_diff;
+
+	unixTSNano_diff_req = (int64_t)unixTSNano - (int64_t)unixTSNano_s;
+
+	assert (unixTSNano_e > unixTSNano_s);
+
+	pos = (double)unixTSNano_diff_req*scale;
+
+	fprintf(stderr, "pos == %li (/%li)\n", pos, pos_end);
+	assert (fseek(i_f, pos*sizeof(history_item_row_t), SEEK_SET)	!= -1);
+
+	unixTSNano_c    = get_uint64(i_f, 0);
+
+	assert (unixTSNano_c >= unixTSNano_s);
+
+	if (unixTSNano_c == unixTSNano)
+		return 0;
+
+	iterations = 0;
+	while (1) {
+		unixTSNano_diff_req = (int64_t)unixTSNano - (int64_t)unixTSNano_c;
+
+		long pos_diff = (double)unixTSNano_diff_req * scale;
+
+		if (pos_diff == 0)
+			pos_diff = unixTSNano_diff_req > 0 ? 1 : -1;
+
+		fprintf(stderr, "pos_diff == %li (%lu [%lu %lu] %le)\n", pos_diff, unixTSNano_diff_req, unixTSNano, unixTSNano_c, scale);
+
+		pos += pos_diff;
+
+		if (pos > pos_end)
+			pos = pos_end;
+		if (pos < 0)
+			pos = 0;
+
+		fprintf(stderr, "pos == %li\n", pos);
+
+		assert (fseek(i_f, pos*sizeof(history_item_row_t), SEEK_SET) != -1);
+
+		fprintf(stderr, "pos_cur*sizeof() == %li\n", ftell(i_f));
+
+		unixTSNano_c    = get_uint64(i_f, 0);
+		assert (unixTSNano_c >= unixTSNano_s);
+
+		if (unixTSNano_c == unixTSNano) {
+			assert (fseek(i_f, (pos+1)*sizeof(history_item_row_t), SEEK_SET)  != -1);
+			return 0;
+		}
+
+		assert (iterations++ < 65536);
+	}
+
+	return 2;
+}
+
+void root_analize(FILE *i_f, FILE *o_f, char *checkpointpath, int concurrency, void *arg, root_checkfunct_t checkfunct, double error_threshold, char realtime) {
 	static uint32_t unixTS_old = 0;
 	history_item_t *value_history, *history_item_ptr;
 	uint64_t        value_history_filled = 0;
-
-	_Z11fitter_initm(MAX_HISTORY);
+	char *checkpointpath_eff = checkpointpath;
 
 	if (concurrency > 1)
 		assert (unshare(CLONE_NEWIPC) == 0);
 
 	value_history = xcalloc(MAX_HISTORY, sizeof(*value_history));
 	procs_meta = shm_calloc(1, sizeof(*procs_meta));
+
+	if (access(checkpointpath, R_OK)) {
+		checkpointpath_eff = NULL;
+	}
+
+	if (checkpointpath_eff == NULL) {
+		_Z11fitter_initmPd(MAX_HISTORY, NULL);
+	} else {
+		checkpoint_t checkpoint;
+
+		FILE *checkpointfile;
+
+		assert ( (checkpointfile = fopen(checkpointpath_eff, "r"))		!= NULL);
+		assert ( fread(&checkpoint, sizeof(checkpoint), 1, checkpointfile)	>= 1);
+		assert ( seekto_unixTSNano(i_f, checkpoint.unixTSNano)			== 0);
+
+		_Z11fitter_initmPd(MAX_HISTORY, checkpoint.par);
+		procs_meta->statistics_events = checkpoint.statistics_events;
+
+		fclose(checkpointfile);
+	}
 
 	int i = 0;
 	while (i < concurrency-1) {
@@ -246,7 +382,7 @@ void root_analize(FILE *i_f, FILE *o_f, int concurrency, void *arg, root_checkfu
 				abort ();
 				break;
 			case 0:
-				exit (worker(i, concurrency));
+				exit (worker(i, concurrency, checkpointpath));
 		}
 
 		procmeta->pid = pid;
@@ -260,7 +396,12 @@ void root_analize(FILE *i_f, FILE *o_f, int concurrency, void *arg, root_checkfu
 		i++;
 	}
 
-	signal(SIGUSR1, worker_finished);
+
+	if (concurrency > 1) {
+		prctl(PR_SET_PDEATHSIG, SIGCHLD);
+		signal(SIGUSR1, worker_finished);
+		signal(SIGCHLD,	worked_died);
+	}
 	//fprintf(stderr, "Running\n");
 
 	while (1) {
@@ -268,17 +409,17 @@ void root_analize(FILE *i_f, FILE *o_f, int concurrency, void *arg, root_checkfu
 
 		history_item_ptr = &value_history[ value_history_filled++ ];
 
-		history_item_ptr->unixTSNano = get_uint64(i_f, realtime);
-		history_item_ptr->sensorTS   = get_uint64(i_f, realtime);
-		history_item_ptr->value      = get_uint32(i_f, realtime);
+		history_item_ptr->row.unixTSNano = get_uint64(i_f, realtime);
+		history_item_ptr->row.sensorTS   = get_uint64(i_f, realtime);
+		history_item_ptr->row.value      = get_uint32(i_f, realtime);
 
-		uint32_t unixTS = history_item_ptr->unixTSNano / 1E9;
+		uint32_t unixTS = history_item_ptr->row.unixTSNano / 1E9;
 		if (unixTS != unixTS_old) {
 			fprintf(stderr, "TS: %u\n", unixTS);
 			unixTS_old = unixTS;
 		}
 
-		if (checkfunct(value_history, &value_history_filled, concurrency, error_threshold, arg)) {
+		if (checkfunct(value_history, &value_history_filled, checkpointpath, concurrency, error_threshold, arg)) {
 			printf("Problem\n");
 		}
 
@@ -301,12 +442,12 @@ void root_analize(FILE *i_f, FILE *o_f, int concurrency, void *arg, root_checkfu
 	return;
 }
 
-void root_analyze_sin(FILE *i_f, FILE *o_f, int concurrency, float frequency, double error_threshold, char realtime)
+void root_analyze_sin(FILE *i_f, FILE *o_f, char *checkpointpath, int concurrency, float frequency, double error_threshold, char realtime)
 {
 	float *frequency_p = xmalloc(sizeof(float));
 	*frequency_p = frequency;
 
-	root_analize(i_f, o_f, concurrency, frequency_p, root_check_sin, error_threshold, realtime);
+	root_analize(i_f, o_f, checkpointpath, concurrency, frequency_p, root_check_sin, error_threshold, realtime);
 
 	free(frequency_p);
 	return;

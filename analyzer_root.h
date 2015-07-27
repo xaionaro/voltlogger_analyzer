@@ -22,12 +22,17 @@
 
 #include <stdint.h>
 
-extern void root_analyze_sin(FILE *in, FILE *out, int concurrency, float frequency, double error_threshold, char realtime);
+extern void root_analyze_sin(FILE *in, FILE *out, char *checkpointfile, int concurrency, float frequency, double error_threshold, char realtime);
 
-struct history_item {
+struct history_item_row {
 	uint64_t		 unixTSNano;
 	uint64_t		 sensorTS;
 	uint32_t		 value;
+} __attribute__((packed));
+typedef struct history_item_row history_item_row_t;
+
+struct history_item {
+	history_item_row_t	 row; 
 	void			*procdata;
 };
 typedef struct history_item history_item_t;

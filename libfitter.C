@@ -41,8 +41,12 @@ double fitfunc(double *x, double *par)
 static TGraph *gr[MAX_THREADS] = {NULL};
 static TF1 *f1[MAX_THREADS] = {NULL};
 
+static double amp     = -1;
+static double avg     = -1;
+static double phase   = -1;
+
 int
-fitter_init(uint64_t history_size) {
+fitter_init(uint64_t history_size, double *par) {
 	int i = 0;
 
 	while (i < MAX_THREADS) {
@@ -50,6 +54,12 @@ fitter_init(uint64_t history_size) {
 		f1[i] = new TF1("f1", fitfunc, 0, 1, 4);
 
 		i++;
+	}
+
+	if (par != NULL) {
+		amp   = par[0];
+		phase = par[2];
+		avg   = par[3];
 	}
 }
 
@@ -71,18 +81,18 @@ fitter(int thread_id, history_item_t *history, uint64_t filled, float frequency,
 	uint64_t i;
 
 
-	uint32_t yMin = history->value, yMax = history->value;
+	uint32_t yMin = history->row.value, yMax = history->row.value;
 	double sum = 0;
 
-	printf("filled == %li; %p %p\n", filled, gr[thread_id], f1[thread_id]);
+	//printf("filled == %li; %p %p\n", filled, gr[thread_id], f1[thread_id]);
 	gr[thread_id]->Set(filled);
 
 	i = 0;
 	while (i < filled) {
 		double x, y;
 
-		x = history[i].sensorTS;
-		y = history[i].value;
+		x = history[i].row.sensorTS;
+		y = history[i].row.value;
 		//x[i] = history[i].unixTSNano;
 //		x[i] = history[i].sensorTS;
 //		y[i] = history[i].value;
@@ -99,20 +109,17 @@ fitter(int thread_id, history_item_t *history, uint64_t filled, float frequency,
 		i++;
 	}
 
-	uint64_t x_start = history[0].sensorTS;
-	uint64_t x_end   = history[filled-1].sensorTS;
+	uint64_t x_start = history[0].row.sensorTS;
+	uint64_t x_end   = history[filled-1].row.sensorTS;
 
 	f1[thread_id]->SetRange(x_start, x_end);
 
 	uint64_t TSDiff       = x_end - x_start;
-	uint64_t unixTSDiff   = history[filled-1].unixTSNano - history[0].unixTSNano;
+	uint64_t unixTSDiff   = history[filled-1].row.unixTSNano - history[0].row.unixTSNano;
 	double   lambda       = (double)2*M_PI / TSDiff;
-	static double amp     = -1;
 	//double   avg          = (yMax + yMin) / 2;
 	static double avg_pre;
 	avg_pre = sum / filled;
-	static double avg     = -1;
-	static double phase   = -1;
 
 	volatile double amp_cur   = amp;
 	volatile double avg_cur   = avg;
