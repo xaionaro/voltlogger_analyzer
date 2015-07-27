@@ -87,16 +87,24 @@ fitter(int thread_id, history_item_t *history, uint64_t filled, float frequency,
 
 
 	uint32_t yMin = history->row.value, yMax = history->row.value;
+	double deltaXMax = 0;
 	double sum = 0;
+	double x_old = history[0].row.sensorTS;
 
 	//printf("filled == %li; %p %p\n", filled, gr[thread_id], f1[thread_id]);
 	gr[thread_id]->Set(filled);
 
 	i = 0;
 	while (i < filled) {
-		double x, y;
+		double x, y, deltaX;
 
 		x = history[i].row.sensorTS;
+
+		deltaX = x - x_old;
+		x_old = x;
+		if (deltaX > deltaXMax)
+			deltaXMax = deltaX;
+
 		y = history[i].row.value;
 		//x[i] = history[i].unixTSNano;
 //		x[i] = history[i].sensorTS;
@@ -125,6 +133,9 @@ fitter(int thread_id, history_item_t *history, uint64_t filled, float frequency,
 	//double   avg          = (yMax + yMin) / 2;
 	static double avg_pre;
 	avg_pre = sum / filled;
+
+	if (deltaXMax/10 > ((double)TSDiff/(double)filled))
+		return -1;
 
 	volatile double amp_cur   = amp;
 	volatile double avg_cur   = avg;
