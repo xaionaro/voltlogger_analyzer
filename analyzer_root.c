@@ -88,6 +88,9 @@ int root_realcheck_sin(int proc_id, int concurrency, char *checkpointpath, histo
 	//static uint64_t statistics_events = 0;
 	double error = _Z6fitteriP12history_itemmfPd(0, value_history, value_history_filled, frequency, par);
 
+	if (concurrency > 1)
+		concurrency--;
+
 	if (error > error_threshold)
 		rc = 1;
 
@@ -123,6 +126,8 @@ int root_realcheck_sin(int proc_id, int concurrency, char *checkpointpath, histo
 		uint64_t i;
 		i = 0;
 
+		fprintf(stderr, "proc_id == %i, procs_meta->canprint_proc == %i\n", proc_id, procs_meta->canprint_proc);
+
 		while (proc_id != procs_meta->canprint_proc);
 
 		while (i < value_history_filled) {
@@ -132,6 +137,7 @@ int root_realcheck_sin(int proc_id, int concurrency, char *checkpointpath, histo
 
 		procs_meta->canprint_proc++;
 		procs_meta->canprint_proc %= concurrency;
+		fprintf(stderr, "procs_meta->canprint_proc --> %i\n", procs_meta->canprint_proc);
 	}
 
 //	frequency = (float)2*M_PI / (float)par[1];
@@ -149,7 +155,8 @@ void worker_finished(int sig) {
 
 void worked_died(int sig) {
 	fprintf(stderr, "Child died\n");
-	abort ();
+	if (procs_meta->statistics_events > 10000)
+		abort ();
 	return;
 }
 
@@ -180,7 +187,7 @@ int root_check_sin(history_item_t *value_history, uint64_t *value_history_filled
 			concurrency_current = 0;
 		}
 
-		if (concurrency > 1) {
+		if (concurrency > 1 && procs_meta->statistics_events > 10000) {
 			while (concurrency_current) {
 				if (procs_meta->p[concurrency_current-1].rc == -1)
 					break;
@@ -201,7 +208,7 @@ int root_check_sin(history_item_t *value_history, uint64_t *value_history_filled
 
 			concurrency_current++;
 		} else {
-			//fprintf(stderr, "Running the fitting in the master process\n");
+			fprintf(stderr, "Running the fitting in the master process (%u, %lu)\n", concurrency, procs_meta->statistics_events);
 			root_realcheck_sin(0, 1, checkpointpath, value_history, *value_history_filled_p, error_threshold, frequency);
 		}
 		*value_history_filled_p = 0;
@@ -233,6 +240,7 @@ void worker_start(int sig) {
 int worker(int proc_id, int concurrency, char *checkpointpath) {
 	volatile uint64_t counter;
 	volatile struct root_realcheckproc_sin_procmeta *procmeta = &procs_meta->p[proc_id];
+	fprintf(stderr, "Worker #%i Initializing (checkpointpath: \"%s\").\n", proc_id, checkpointpath);
 	parent_pid = getppid();
 
 	signal(SIGUSR1, worker_start);
@@ -243,17 +251,19 @@ int worker(int proc_id, int concurrency, char *checkpointpath) {
 	fprintf(stderr, "Worker #%i Initialized (checkpointpath: \"%s\").\n", proc_id, checkpointpath);
 
 	while (1) {
+		fprintf(stderr, "Worker #%i: Waiting for a job.\n", proc_id);
 		counter = 0;
 		while (procs_meta->p[proc_id].rc != -1)
 			if (counter++ > SPINLOCK_TIMEOUT_ITERATIONS)
 				while (pthread_mutex_reltimedlock(&thisworker_lock, 1, 0) == ETIMEDOUT)
 					if (!parent_isalive())
 						return 0;
-		//fprintf(stderr, "Worker #%i: I have a job.\n", proc_id);
+		fprintf(stderr, "Worker #%i: I have a job.\n", proc_id);
 
 		procmeta->rc = root_realcheck_sin(proc_id, concurrency, checkpointpath, (void *)procmeta->value_history, procmeta->value_history_filled, procmeta->error_threshold, procmeta->frequency);
 		kill(parent_pid, SIGUSR1);
 	}
+	fprintf(stderr, "Worker #%i: Finished.\n", proc_id);
 
 	return 0;
 }
