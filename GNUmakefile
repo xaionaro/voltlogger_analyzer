@@ -14,7 +14,7 @@ CARCHFLAGS ?= -march=native
 
 LIBS := -lm
 LDSECFLAGS ?= -Xlinker -zrelro
-LDFLAGS += $(LDSECFLAGS) -pthread -flto -L. -lfitter_C
+LDFLAGS += $(LDSECFLAGS) -pthread -flto -L.
 INC := $(INC)
 
 INSTDIR = $(DESTDIR)$(PREFIX)
@@ -24,10 +24,8 @@ error.o\
 malloc.o\
 pthreadex.o\
 analyzer.o\
-analyzer_root.o\
 main.o\
 binary.o\
-libfitter_C.so
 
 
 binary=voltlogger_analyzer
