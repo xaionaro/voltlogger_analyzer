@@ -96,7 +96,7 @@ int main(int argc, char *argv[]) {
 
 	switch (functype) {
 		case FT_SIN:
-			vl_analyze_sin(input, stdout, checkpointpath, concurrency, frequency, 50, realtime);
+			vl_analyze_sin(input, stdout, checkpointpath, concurrency, frequency, 1, realtime);
 			break;
 		default:
 			fprintf(stderr, "Unknown approximation function\n");

@@ -36,13 +36,6 @@
 
 #define MAX_HISTORY (1 << 24)
 
-struct history_item {
-	uint64_t		 unixTSNano;
-	uint64_t		 sensorTS;
-	uint32_t		 value;
-	void			*procdata;
-};
-typedef struct history_item history_item_t;
 
 typedef int (*vl_checkfunct_t)(history_item_t *value_history, uint64_t *value_history_filled_p, char *checkpointfile, int concurrency, void *arg, double error_threshold, char realtime);
 
@@ -54,12 +47,12 @@ int vl_realcheck_sin(history_item_t *value_history, uint64_t value_history_fille
 	p =  value_history;
 	e = &value_history[value_history_filled-1];
 
-	uint64_t sensorTS_start     = p->sensorTS;
-	uint64_t sensorTSDiff_total = e->sensorTS - sensorTS_start;
+	uint64_t sensorTS_start     = p->row.sensorTS;
+	uint64_t sensorTSDiff_total = e->row.sensorTS - sensorTS_start;
 	double y_sum = 0;
 
 	while (p <= e) {
-		y_sum += p->value;
+		y_sum += p->row.value;
 
 		p++;
 	}
@@ -71,8 +64,8 @@ int vl_realcheck_sin(history_item_t *value_history, uint64_t value_history_fille
 	history_item_t *p_old = p = value_history;
 
 	while (++p <= e) {
-		double y_diff = p->value - y_avg;
-		y_int += y_diff*y_diff * (p->sensorTS - p_old->sensorTS);
+		double y_diff = p->row.value - y_avg;
+		y_int += y_diff*y_diff * (p->row.sensorTS - p_old->row.sensorTS);
 
 		p_old = p;
 	}
@@ -119,9 +112,9 @@ int vl_realcheck_sin(history_item_t *value_history, uint64_t value_history_fille
 			double sqdeviation = 0;
 			p = value_history;
 			while (p <= e) {
-				double y_calc = amp*sin(lambda*p->sensorTS + phase_add_best + phase + phase_add) + y_avg;
+				double y_calc = amp*sin(lambda*p->row.sensorTS + phase_add_best + phase + phase_add) + y_avg;
 
-				double y_diff = y_calc - (double)p->value;
+				double y_diff = y_calc - (double)p->row.value;
 				//fprintf(stderr, "Y: %li %i %lf %le\n", p->sensorTS, p->value, y_calc, y_diff);
 
 				sqdeviation += y_diff*y_diff;
@@ -140,7 +133,15 @@ int vl_realcheck_sin(history_item_t *value_history, uint64_t value_history_fille
 		//fprintf(stderr, "phase_add_best == %le (%le). sqdeviation_min == %le. scan_interval == %le\n", phase_add_best, phase_add_best_add, sqdeviation_min, scan_interval);
 	}
 
-	fprintf(stderr, "%le %le %le %le %le\n", amp, lambda, phase, y_avg, sqdeviation_min/value_history_filled);
+	double err = sqdeviation_min/value_history_filled/(value_history_filled-1);
+
+	if (err > error_threshold) {
+		p = value_history;
+		while (p <= e) {
+			printf("Z\t%lu\t%lu\t%u\t%lf\t%lf\t%lf\t%lf\t%lf\n", p->row.unixTSNano, p->row.sensorTS, p->row.value, err, amp, lambda, phase, y_avg);
+			p++;
+		}
+	}
 
 	return 0;
 }
@@ -151,7 +152,7 @@ int vl_check_sin(history_item_t *value_history, uint64_t *value_history_filled_p
 	history_item_t *cur = &value_history[*value_history_filled_p - 1];
 
 	uint64_t expectedEndOffset_unixTSNano = (uint64_t)(1E9 /* nanosecs in sec */ / frequency);
-	uint64_t     currentOffset_unixTSNano = cur->unixTSNano - value_history[0].unixTSNano;
+	uint64_t     currentOffset_unixTSNano = cur->row.unixTSNano - value_history[0].row.unixTSNano;
 
 	int rc = 0;
 	if ( currentOffset_unixTSNano  >=  expectedEndOffset_unixTSNano ) {
@@ -174,9 +175,9 @@ static inline void vl_analize(FILE *i_f, FILE *o_f, char *checkpointfile, int co
 
 		history_item_ptr = &value_history[ value_history_filled++ ];
 
-		history_item_ptr->unixTSNano = get_uint64(i_f, realtime);
-		history_item_ptr->sensorTS   = get_uint64(i_f, realtime);
-		history_item_ptr->value      = get_uint32(i_f, realtime);
+		history_item_ptr->row.unixTSNano = get_uint64(i_f, realtime);
+		history_item_ptr->row.sensorTS   = get_uint64(i_f, realtime);
+		history_item_ptr->row.value      = get_uint32(i_f, realtime);
 
 		if (checkfunct(value_history, &value_history_filled, checkpointfile, concurrency, arg, error_threshold, realtime)) {
 			printf("Problem\n");
