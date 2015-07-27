@@ -293,6 +293,9 @@ int seekto_unixTSNano(FILE *i_f, uint64_t unixTSNano) {
 	unixTSNano_diff = (int64_t)unixTSNano_e - (int64_t)unixTSNano_s;
 	scale = (double)pos_end / (double)unixTSNano_diff;
 
+	fprintf(stderr, "%lu %lu\n", unixTSNano, unixTSNano_s);
+	assert (unixTSNano > unixTSNano_s);
+
 	unixTSNano_diff_req = (int64_t)unixTSNano - (int64_t)unixTSNano_s;
 
 	assert (unixTSNano_e > unixTSNano_s);
