@@ -46,6 +46,7 @@ int main(int argc, char *argv[]) {
 	functype_t functype = FT_SIN;
 	char realtime = 0;
 	float frequency = 50;
+	int concurrency = 1;
 
 	// Initializing output subsystem
 	{
@@ -59,7 +60,7 @@ int main(int argc, char *argv[]) {
 
 	// Parsing arguments
 	char c;
-	while ((c = getopt (argc, argv, "rf:F:")) != -1) {
+	while ((c = getopt (argc, argv, "rf:F:c:")) != -1) {
 		char *arg;
 		arg = optarg;
 
@@ -76,6 +77,9 @@ int main(int argc, char *argv[]) {
 			case 'r':
 				realtime = 1;
 				break;
+			case 'c':
+				concurrency = atoi(optarg);
+				break;
 			default:
 				abort ();
 		}
@@ -83,7 +87,7 @@ int main(int argc, char *argv[]) {
 
 	switch (functype) {
 		case FT_SIN:
-			root_analyze_sin(stdin, stdout, frequency, 50, realtime);
+			root_analyze_sin(stdin, stdout, concurrency, frequency, 50, realtime);
 			break;
 		default:
 			fprintf(stderr, "Unknown approximation function\n");

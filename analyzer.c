@@ -17,6 +17,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#if 0
+
 #include "configuration.h"
 #include "macros.h"
 
@@ -138,4 +140,6 @@ void vl_analyze_sin(FILE *i_f, FILE *o_f, float frequency)
 	free(frequency_p);
 	return;
 }
+
+#endif
 

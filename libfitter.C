@@ -26,36 +26,46 @@
 #include "malloc.h"
 #include <stdint.h>
 
+#include "configuration.h"
 #include "analyzer_root.h"
+
+#define MAX_THREADS 1
 
 double fitfunc(double *x, double *par)
 {
 	return par[0] * sin(par[1] * (*x) + par[2]) + par[3];
 }
 
-double *x = NULL;
-double *y = NULL;
-static TGraph *gr = NULL;
-static TF1 *f1 = NULL;
+//double *x[MAX_THREADS] = {NULL};
+//double *y[MAX_THREADS] = {NULL};
+static TGraph *gr[MAX_THREADS] = {NULL};
+static TF1 *f1[MAX_THREADS] = {NULL};
 
 int
 fitter_init(uint64_t history_size) {
-	x = (double *)calloc(history_size, sizeof(*x));
-	y = (double *)calloc(history_size, sizeof(*x));
-	gr = new TGraph();//history_size);
-	f1 = new TF1("f1", fitfunc, 0, 1, 4);
+	int i = 0;
+
+	while (i < MAX_THREADS) {
+		gr[i] = new TGraph(history_size);
+		f1[i] = new TF1("f1", fitfunc, 0, 1, 4);
+
+		i++;
+	}
 }
 
 int
 fitter_deinit() {
-	free(x);
-	free(y);
-	delete gr;
-	delete f1;
+	int i = 0;
+
+	while (i < MAX_THREADS) {
+		delete gr[i];
+		delete f1[i];
+		i++;
+	}
 }
 
 double
-fitter(history_item_t *history, uint64_t filled, float frequency, double *par)
+fitter(int thread_id, history_item_t *history, uint64_t filled, float frequency, double *par)
 {
 	//TGraph gr(filename, "%*lg %lg %lg");
 	uint64_t i;
@@ -64,30 +74,37 @@ fitter(history_item_t *history, uint64_t filled, float frequency, double *par)
 	uint32_t yMin = history->value, yMax = history->value;
 	double sum = 0;
 
-	printf("filled == %li; %p\n", filled, gr);
-	gr->Set(filled);
+	printf("filled == %li; %p %p\n", filled, gr[thread_id], f1[thread_id]);
+	gr[thread_id]->Set(filled);
 
 	i = 0;
 	while (i < filled) {
+		double x, y;
+
+		x = history[i].sensorTS;
+		y = history[i].value;
 		//x[i] = history[i].unixTSNano;
-		x[i] = history[i].sensorTS;
-		y[i] = history[i].value;
+//		x[i] = history[i].sensorTS;
+//		y[i] = history[i].value;
 
-		if (y[i] < yMin)
-			yMin = y[i];
+		if (y < yMin)
+			yMin = y;
 
-		if (y[i] > yMax)
-			yMax = y[i];
+		if (y > yMax)
+			yMax = y;
 
 	//	printf("%li %li %i\n", i, history[i].unixTSNano, history[i].value);
-		gr->SetPoint(i, x[i], y[i]);
-		sum += y[i];
+		gr[thread_id]->SetPoint(i, x, y);
+		sum += y;
 		i++;
 	}
 
-	f1->SetRange(x[0], x[filled-1]);
+	uint64_t x_start = history[0].sensorTS;
+	uint64_t x_end   = history[filled-1].sensorTS;
 
-	uint64_t TSDiff       = x[filled-1] - x[0];
+	f1[thread_id]->SetRange(x_start, x_end);
+
+	uint64_t TSDiff       = x_end - x_start;
 	uint64_t unixTSDiff   = history[filled-1].unixTSNano - history[0].unixTSNano;
 	double   lambda       = (double)2*M_PI / TSDiff;
 	static double amp     = -1;
@@ -97,32 +114,36 @@ fitter(history_item_t *history, uint64_t filled, float frequency, double *par)
 	static double avg     = -1;
 	static double phase   = -1;
 
+	volatile double amp_cur   = amp;
+	volatile double avg_cur   = avg;
+	volatile double phase_cur = phase;
 
-	//TF1 f1("f1", fitfunc, x[0], x[filled-1], 4);
+
+	//TF1 f1[]("f1", fitfunc, x[0], x[filled-1], 4);
 
 	double amp_pre = (yMax - yMin) / 2;
-//	f1->SetErrors(amp*0.01, lambda*0.01, phase*0.01, avg*0.01);
-	f1->SetParameters(amp < 0 ? amp_pre : amp, lambda, phase < 0 ? 0 : phase, avg < 0 ? avg_pre : avg);
-	//f1->SetParameters(amp_pre, lambda, phase < 0 ? 0 : phase, avg);
-	if (amp < 0) {
-		f1->SetParLimits(0, amp_pre*0.9, amp_pre*1.1);
+//	f1[thread_id]->SetErrors(amp*0.01, lambda*0.01, phase*0.01, avg*0.01);
+	f1[thread_id]->SetParameters(amp_cur < 0 ? amp_pre : amp_cur, lambda, phase < 0 ? 0 : phase, avg_cur < 0 ? avg_pre : avg_cur);
+	//f1[thread_id]->SetParameters(amp_pre, lambda, phase < 0 ? 0 : phase, avg);
+	if (amp_cur < 0) {
+		f1[thread_id]->SetParLimits(0, amp_pre*0.9, amp_pre*1.1);
 	} else {
-		f1->SetParLimits(0, amp*0.9999, amp*1.0001);
+		f1[thread_id]->SetParLimits(0, amp_cur*0.9999, amp_cur*1.0001);
 	}
-	//f1->SetParLimits(1, lambda*0.9, lambda*1.1);
-	f1->SetParLimits(1, lambda*0.9999, lambda*1.0001);
-	if (phase < 0) {
-		f1->SetParLimits(2, 0, 2*M_PI);
+	//f1[thread_id]->SetParLimits(1, lambda*0.9, lambda*1.1);
+	f1[thread_id]->SetParLimits(1, lambda*0.9999, lambda*1.0001);
+	if (phase_cur < 0) {
+		f1[thread_id]->SetParLimits(2, 0, 2*M_PI);
 	} else {
-		f1->SetParLimits(2, phase-(0.0001*2*M_PI), phase+(0.0001*2*M_PI));
+		f1[thread_id]->SetParLimits(2, phase_cur-(0.0001*2*M_PI), phase_cur+(0.0001*2*M_PI));
 	}
-	if (avg < 0) {
-		f1->SetParLimits(3, avg_pre*0.9999, avg_pre*1.0001);
+	if (avg_cur < 0) {
+		f1[thread_id]->SetParLimits(3, avg_pre*0.9999, avg_pre*1.0001);
 	} else {
-		f1->SetParLimits(3, avg*0.9999, avg*1.0001);
+		f1[thread_id]->SetParLimits(3, avg_cur*0.9999, avg_cur*1.0001);
 	}
 
-	gr->Fit(f1, "WROQ");
+	gr[thread_id]->Fit(f1[thread_id], "WROQ");
 
 /*
 	printf("amp = %e (%lu)\n", amp, (yMax - yMin) / 2);
@@ -137,16 +158,18 @@ fitter(history_item_t *history, uint64_t filled, float frequency, double *par)
 	printf("par3 = %e\n", f1->GetParameter(3));
 */
 	if (par != NULL) {
-		par[0] = f1->GetParameter(0);
-		par[1] = f1->GetParameter(1);//*(double)TSDiff/(double)unixTSDiff;
-		par[2] = f1->GetParameter(2);
-		par[3] = f1->GetParameter(3);
+		par[0] = f1[thread_id]->GetParameter(0);
+		par[1] = f1[thread_id]->GetParameter(1);//*(double)TSDiff/(double)unixTSDiff;
+		par[2] = f1[thread_id]->GetParameter(2);
+		par[3] = f1[thread_id]->GetParameter(3);
 	}
 
-	if (f1->GetChisquare() / f1->GetNDF() < 100000) {
-		amp   = f1->GetParameter(0);
-		phase = f1->GetParameter(2);
-		avg   = f1->GetParameter(3);
+	if (thread_id == 0) {
+		if (f1[thread_id]->GetChisquare() / f1[thread_id]->GetNDF() < 100000) {
+			amp   = f1[thread_id]->GetParameter(0);
+			phase = f1[thread_id]->GetParameter(2);
+			avg   = f1[thread_id]->GetParameter(3);
+		}
 	}
-	return f1->GetChisquare() / f1->GetNDF();
+	return f1[thread_id]->GetChisquare() / f1[thread_id]->GetNDF();
 }

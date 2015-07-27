@@ -17,6 +17,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#define _GNU_SOURCE	/* for unshare() */
+
 #include "configuration.h"
 #include "macros.h"
 
@@ -27,60 +29,97 @@
 #include <string.h>	/* memset()	*/
 #include <math.h>	/* fabs()	*/
 #include <assert.h>	/* assert()	*/
-//#include <errno.h>	/* errno	*/
+#include <sched.h>	/* unshare()	*/
+#include <sys/types.h>	/* waitpid()	*/
+#include <sys/wait.h>	/* waitpid()	*/
+#include <errno.h>	/* errno	*/
+#include <pthread.h>	/* PTHREAD_MUTEX_INITIALIZER */
+
 
 #include "configuration.h"
 #include "error.h"
 #include "malloc.h"
 #include "analyzer_root.h"
 #include "binary.h"
+#include "pthreadex.h"
 #include "libfitter.h"
 
-#define MAX_HISTORY (1 << 24)
+#define MAX_HISTORY (1 << 16)
 
 
-typedef int (*root_checkfunct_t)(history_item_t *value_history, uint64_t *value_history_filled_p, double error_threshold, void *arg);
+typedef int (*root_checkfunct_t)(history_item_t *value_history, uint64_t *value_history_filled_p, int concurrency, double error_threshold, void *arg);
 
-/*
-int root_realcheck_sin(history_item_t *value_history, uint64_t value_history_filled, float frequency_p) {
-	history_item_t *stages[SIN_NUM_STAGES], *p, *e;
 
-	p =  value_history;
-	e = &value_history[value_history_filled-1];
+struct root_realcheckproc_sin_procmeta {
+	int		 proc_id;
+	int		 concurrency;
+	history_item_t	 value_history[MAX_HISTORY];
+	uint64_t	 value_history_filled;
+	double		 error_threshold;
+	float		 frequency;
 
-	uint64_t sensorTS_start     = p->sensorTS;
-	uint64_t sensorTSDiff_total = e->sensorTS - sensorTS_start;
+	pid_t		 pid;
+	int		 rc;
+};
+struct root_realcheckproc_sin_procmetas {
+	struct root_realcheckproc_sin_procmeta	p[MAX_PROCS];
+	int canprint_proc;
+	uint64_t statistics_events;
+};
+volatile struct root_realcheckproc_sin_procmetas *procs_meta;
 
-	int stage_old = -1;
+int root_realcheck_sin(int proc_id, int concurrency, history_item_t *value_history, uint64_t value_history_filled, double error_threshold, float frequency) {
+	double par[4];
+	int rc;
 
-	while (p <= e) {
-		uint64_t sensorTSDiff_cur = p->sensorTS - sensorTS_start;
+	/*if (proc_id != 0) {
+		fprintf(stderr, "multi-procing is not supported, yet");
+		exit(-1);
+	}*/
 
-		int stage = sensorTSDiff_cur*SIN_NUM_STAGES / sensorTSDiff_total;
+	static uint64_t statistics_events = 0;
+	double error = _Z6fitteriP12history_itemmfPd(0, value_history, value_history_filled, frequency, par);
 
-		if (stage >= SIN_NUM_STAGES)
-			stage = SIN_NUM_STAGES-1;
+	if (error > error_threshold)
+		rc = 1;
 
-		if (stage != stage_old) {
-			if (stage != stage_old + 1) {
-				return 0;
-			}
-			printf("%i %u\n", stage, p->value);
-			stages[stage] = p;
-			stage_old = stage;
-		}
-
-		p++;
+	if (proc_id == 0) {
+		procs_meta->statistics_events++;
 	}
 
-	return 0;
-}
-*/
+	printf("_Z6fitterP12history_itemmf -> %lf %lu %lu\n", error, value_history->unixTSNano, procs_meta->statistics_events);
 
-int root_check_sin(history_item_t *value_history, uint64_t *value_history_filled_p, double error_threshold, void *_frequency_p) {
-	static uint64_t statistics_events = 0;
+	if (rc && statistics_events > 10000) {
+		uint64_t i;
+		i = 0;
+
+		while (proc_id != procs_meta->canprint_proc);
+
+		while (i < value_history_filled) {
+			printf("Z\t%lu\t%lu\t%u\t%lf\t%lf\t%lf\t%lf\t%lf\n", value_history[i].unixTSNano, value_history[i].sensorTS, value_history[i].value, error, par[0], par[1], par[2], par[3]);
+			i++;
+		}
+
+		procs_meta->canprint_proc++;
+		procs_meta->canprint_proc %= concurrency;
+	}
+
+//		frequency = (float)2*M_PI / (float)par[1];
+//		*(float *)_frequency_p = frequency;
+
+	return rc;
+}
+
+pthread_mutex_t masterprocess_lock = PTHREAD_MUTEX_INITIALIZER;
+
+void worker_finished(int sig) {
+	pthread_mutex_unlock(&masterprocess_lock);
+}
+
+int root_check_sin(history_item_t *value_history, uint64_t *value_history_filled_p, int concurrency, double error_threshold, void *_frequency_p) {
 	float frequency = *(float *)_frequency_p;
-	double par[4];
+	//double par[4];
+	static int concurrency_current = 0;
 
 	//history_item_t *cur = &value_history[*value_history_filled_p - 1];
 
@@ -90,41 +129,139 @@ int root_check_sin(history_item_t *value_history, uint64_t *value_history_filled
 
 	int rc = 0;
 	if ( currentOffset_unixTSNano  >=  expectedEndOffset_unixTSNano ) {
-		double error = _Z6fitterP12history_itemmfPd(value_history, *value_history_filled_p, frequency, par);
-		printf("_Z6fitterP12history_itemmf -> %lf %lu\n", error, value_history->unixTSNano);
-		//rc = root_realcheck_sin(value_history, *value_history_filled_p, frequency);
+		if (concurrency_current >= concurrency-1) {
+			int i = 0;
+			while (i < concurrency_current) {
+				volatile uint64_t counter = 0;
+				while (procs_meta->p[i].rc == -1)
+					if (counter++ > SPINLOCK_TIMEOUT_ITERATIONS)
+						while (pthread_mutex_reltimedlock(&masterprocess_lock, 0, MUTEX_DEFAULTTIMEOUT_NSECS) == ETIMEDOUT);
 
-		if (error > error_threshold)
-			rc = 1;
-
-		statistics_events++;
-
-		if (rc && statistics_events > 6000) {
-			uint64_t i;
-			i = 0;
-			while (i < *value_history_filled_p) {
-				printf("Z\t%lu\t%lu\t%u\t%lf\t%lf\t%lf\t%lf\t%lf\n", value_history[i].unixTSNano, value_history[i].sensorTS, value_history[i].value, error, par[0], par[1], par[2], par[3]);
 				i++;
 			}
+			//fprintf(stderr, "Workers finished\n");
+			concurrency_current = 0;
 		}
 
-//		frequency = (float)2*M_PI / (float)par[1];
-//		*(float *)_frequency_p = frequency;
+		if (concurrency > 1) {
+			while (concurrency_current) {
+				if (procs_meta->p[concurrency_current-1].rc == -1)
+					break;
 
+				concurrency_current--;
+			}
+			//fprintf(stderr, "Sending to worker #%i\n", concurrency_current);
+			volatile struct root_realcheckproc_sin_procmeta *procmeta = &procs_meta->p[concurrency_current];
+			memcpy((void *)procmeta->value_history, value_history, sizeof(*value_history) * (*value_history_filled_p));
+			procmeta->proc_id              =  concurrency_current;
+			procmeta->concurrency          =  concurrency;
+			procmeta->value_history_filled = *value_history_filled_p;
+			procmeta->error_threshold      =  error_threshold;
+			procmeta->frequency            =  frequency;
+			procmeta->rc                   =  -1;
+
+			kill (procmeta->pid, SIGUSR1);
+
+			concurrency_current++;
+		} else {
+			//fprintf(stderr, "Running the fitting in the master process\n");
+			root_realcheck_sin(0, 1, value_history, *value_history_filled_p, error_threshold, frequency);
+		}
 		*value_history_filled_p = 0;
 	}
 
 	return rc;
 }
 
-static inline void root_analize(FILE *i_f, FILE *o_f, void *arg, root_checkfunct_t checkfunct, double error_threshold, char realtime) {
+pid_t parent_pid;
+
+int parent_isalive() {
+	int rc;
+
+	if ((rc=kill(parent_pid, 0))) {
+		if (errno == ESRCH) {
+			return 0;
+		}
+	}
+
+	return 1;
+}
+
+pthread_mutex_t thisworker_lock = PTHREAD_MUTEX_INITIALIZER;
+
+void worker_start(int sig) {
+	pthread_mutex_unlock(&thisworker_lock);
+}
+
+int worker(int proc_id, int concurrency) {
+	volatile uint64_t counter;
+	volatile struct root_realcheckproc_sin_procmeta *procmeta = &procs_meta->p[proc_id];
+	parent_pid = getppid();
+
+	signal(SIGUSR1, worker_start);
+
+	procs_meta->p[proc_id].rc = 0;
+
+	pthread_mutex_lock(&thisworker_lock);
+	//fprintf(stderr, "Worker #%i Initialized.\n", proc_id);
+
+	while (1) {
+		counter = 0;
+		while (procs_meta->p[proc_id].rc != -1)
+			if (counter++ > SPINLOCK_TIMEOUT_ITERATIONS)
+				while (pthread_mutex_reltimedlock(&thisworker_lock, 1, 0) == ETIMEDOUT)
+					if (!parent_isalive())
+						return 0;
+		//fprintf(stderr, "Worker #%i: I have a job.\n", proc_id);
+
+		procmeta->rc = root_realcheck_sin(proc_id, concurrency, (void *)procmeta->value_history, procmeta->value_history_filled, procmeta->error_threshold, procmeta->frequency);
+		kill(parent_pid, SIGUSR1);
+	}
+
+	return 0;
+}
+
+void root_analize(FILE *i_f, FILE *o_f, int concurrency, void *arg, root_checkfunct_t checkfunct, double error_threshold, char realtime) {
 	static uint32_t unixTS_old = 0;
 	history_item_t *value_history, *history_item_ptr;
 	uint64_t        value_history_filled = 0;
 
 	_Z11fitter_initm(MAX_HISTORY);
 
+	if (concurrency > 1)
+		assert (unshare(CLONE_NEWIPC) == 0);
+
 	value_history = xcalloc(MAX_HISTORY, sizeof(*value_history));
+	procs_meta = shm_calloc(1, sizeof(*procs_meta));
+
+	int i = 0;
+	while (i < concurrency-1) {
+		volatile struct root_realcheckproc_sin_procmeta *procmeta = &procs_meta->p[i];
+		procs_meta->p[i].rc = -1;
+
+		pid_t pid = fork();
+
+		switch (pid) {
+			case -1:
+				abort ();
+				break;
+			case 0:
+				exit (worker(i, concurrency));
+		}
+
+		procmeta->pid = pid;
+
+		i++;
+	}
+	i = 0;
+	while (i < concurrency) {
+		//fprintf(stderr, "Waiting for worker #%i\n", i);
+		while (procs_meta->p[i].rc != 0);// fprintf(stderr, "p[%i].rc == %i\n", i, procs_meta->p[i].rc);
+		i++;
+	}
+
+	signal(SIGUSR1, worker_finished);
+	//fprintf(stderr, "Running\n");
 
 	while (1) {
 		assert (value_history_filled < MAX_HISTORY);	// overflow
@@ -141,7 +278,7 @@ static inline void root_analize(FILE *i_f, FILE *o_f, void *arg, root_checkfunct
 			unixTS_old = unixTS;
 		}
 
-		if (checkfunct(value_history, &value_history_filled, error_threshold, arg)) {
+		if (checkfunct(value_history, &value_history_filled, concurrency, error_threshold, arg)) {
 			printf("Problem\n");
 		}
 
@@ -156,6 +293,7 @@ static inline void root_analize(FILE *i_f, FILE *o_f, void *arg, root_checkfunct
 		}
 	}
 
+	shm_free((void *)procs_meta);
 	free(value_history);
 
 	_Z13fitter_deinitv();
@@ -163,12 +301,12 @@ static inline void root_analize(FILE *i_f, FILE *o_f, void *arg, root_checkfunct
 	return;
 }
 
-void root_analyze_sin(FILE *i_f, FILE *o_f, float frequency, double error_threshold, char realtime)
+void root_analyze_sin(FILE *i_f, FILE *o_f, int concurrency, float frequency, double error_threshold, char realtime)
 {
 	float *frequency_p = xmalloc(sizeof(float));
 	*frequency_p = frequency;
 
-	root_analize(i_f, o_f, frequency_p, root_check_sin, error_threshold, realtime);
+	root_analize(i_f, o_f, concurrency, frequency_p, root_check_sin, error_threshold, realtime);
 
 	free(frequency_p);
 	return;
