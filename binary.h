@@ -1,5 +1,5 @@
 /*
-    voltlogger_analyzer
+    voltlogger_oscilloscope
     
     Copyright (C) 2015 Dmitry Yu Okunev <dyokunev@ut.mephi.ru> 0x8E30679C
     
@@ -20,6 +20,8 @@
 #include <stdio.h>	/* FILE		*/
 #include <stdint.h>	/* uint64_t	*/
 
-extern uint64_t get_uint64(FILE *i_f);
-extern uint32_t get_uint32(FILE *i_f);
+extern uint64_t get_uint64(FILE *i_f, char realtime);
+extern uint32_t get_uint32(FILE *i_f, char realtime);
+extern uint16_t get_uint16(FILE *i_f, char realtime);
+extern uint8_t  get_uint8 (FILE *i_f, char realtime);
 

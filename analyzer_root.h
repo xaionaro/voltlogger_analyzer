@@ -22,7 +22,7 @@
 
 #include <stdint.h>
 
-extern void root_analyze_sin(FILE *in, FILE *out, float frequency);
+extern void root_analyze_sin(FILE *in, FILE *out, float frequency, double error_threshold, char realtime);
 
 struct history_item {
 	uint64_t		 unixTSNano;

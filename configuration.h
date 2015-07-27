@@ -24,5 +24,5 @@
 
 #define	OUTPUT_LOCK_TIMEOUT		1000
 
-#define PARSER_MAXELEMENTS		65536
+#define RETRY_DELAY_USECS                100000
 

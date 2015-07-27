@@ -23,11 +23,13 @@
 #include <stdio.h>	/* FILE		*/
 #include <stdlib.h>	/* size_t	*/
 #include <stdint.h>	/* uint64_t	*/
+#include <unistd.h>	/* usleep()	*/
 #include <string.h>	/* memset()	*/
 #include <math.h>	/* fabs()	*/
 #include <assert.h>	/* assert()	*/
 //#include <errno.h>	/* errno	*/
 
+#include "configuration.h"
 #include "error.h"
 #include "malloc.h"
 #include "analyzer_root.h"
@@ -37,7 +39,7 @@
 #define MAX_HISTORY (1 << 24)
 
 
-typedef int (*root_checkfunct_t)(history_item_t *value_history, uint64_t *value_history_filled_p, void *arg);
+typedef int (*root_checkfunct_t)(history_item_t *value_history, uint64_t *value_history_filled_p, double error_threshold, void *arg);
 
 /*
 int root_realcheck_sin(history_item_t *value_history, uint64_t value_history_filled, float frequency_p) {
@@ -75,7 +77,8 @@ int root_realcheck_sin(history_item_t *value_history, uint64_t value_history_fil
 }
 */
 
-int root_check_sin(history_item_t *value_history, uint64_t *value_history_filled_p, void *_frequency_p) {
+int root_check_sin(history_item_t *value_history, uint64_t *value_history_filled_p, double error_threshold, void *_frequency_p) {
+	static uint64_t statistics_events = 0;
 	float frequency = *(float *)_frequency_p;
 	double par[4];
 
@@ -91,10 +94,12 @@ int root_check_sin(history_item_t *value_history, uint64_t *value_history_filled
 		printf("_Z6fitterP12history_itemmf -> %lf %lu\n", error, value_history->unixTSNano);
 		//rc = root_realcheck_sin(value_history, *value_history_filled_p, frequency);
 
-		if (error > 1000)
+		if (error > error_threshold)
 			rc = 1;
 
-		if (rc) {
+		statistics_events++;
+
+		if (rc && statistics_events > 6000) {
 			uint64_t i;
 			i = 0;
 			while (i < *value_history_filled_p) {
@@ -112,7 +117,8 @@ int root_check_sin(history_item_t *value_history, uint64_t *value_history_filled
 	return rc;
 }
 
-static inline void root_analize(FILE *i_f, FILE *o_f, void *arg, root_checkfunct_t checkfunct) {
+static inline void root_analize(FILE *i_f, FILE *o_f, void *arg, root_checkfunct_t checkfunct, double error_threshold, char realtime) {
+	static uint32_t unixTS_old = 0;
 	history_item_t *value_history, *history_item_ptr;
 	uint64_t        value_history_filled = 0;
 
@@ -120,20 +126,34 @@ static inline void root_analize(FILE *i_f, FILE *o_f, void *arg, root_checkfunct
 
 	value_history = xcalloc(MAX_HISTORY, sizeof(*value_history));
 
-	while (!feof(i_f)) {
+	while (1) {
 		assert (value_history_filled < MAX_HISTORY);	// overflow
 
 		history_item_ptr = &value_history[ value_history_filled++ ];
 
-		history_item_ptr->unixTSNano = get_uint64(i_f);
-		history_item_ptr->sensorTS   = get_uint64(i_f);
-		history_item_ptr->value      = get_uint32(i_f);
+		history_item_ptr->unixTSNano = get_uint64(i_f, realtime);
+		history_item_ptr->sensorTS   = get_uint64(i_f, realtime);
+		history_item_ptr->value      = get_uint32(i_f, realtime);
 
-		if (checkfunct(value_history, &value_history_filled, arg)) {
+		uint32_t unixTS = history_item_ptr->unixTSNano / 1E9;
+		if (unixTS != unixTS_old) {
+			fprintf(stderr, "TS: %u\n", unixTS);
+			unixTS_old = unixTS;
+		}
+
+		if (checkfunct(value_history, &value_history_filled, error_threshold, arg)) {
 			printf("Problem\n");
 		}
 
+		if (feof(i_f)) {
+			if (!realtime)
+				break;
 
+			while (feof(i_f)) {
+				usleep(RETRY_DELAY_USECS);
+				clearerr(i_f);
+			}
+		}
 	}
 
 	free(value_history);
@@ -143,12 +163,12 @@ static inline void root_analize(FILE *i_f, FILE *o_f, void *arg, root_checkfunct
 	return;
 }
 
-void root_analyze_sin(FILE *i_f, FILE *o_f, float frequency)
+void root_analyze_sin(FILE *i_f, FILE *o_f, float frequency, double error_threshold, char realtime)
 {
 	float *frequency_p = xmalloc(sizeof(float));
 	*frequency_p = frequency;
 
-	root_analize(i_f, o_f, frequency_p, root_check_sin);
+	root_analize(i_f, o_f, frequency_p, root_check_sin, error_threshold, realtime);
 
 	free(frequency_p);
 	return;

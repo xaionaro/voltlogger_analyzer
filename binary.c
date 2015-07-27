@@ -1,5 +1,5 @@
 /*
-    voltlogger_analyzer
+    voltlogger_oscilloscope
     
     Copyright (C) 2015 Dmitry Yu Okunev <dyokunev@ut.mephi.ru> 0x8E30679C
     
@@ -19,22 +19,38 @@
 
 
 #include <assert.h>	/* assert()	*/
+#include <unistd.h>
+#include <stdio.h>
 
+#include "configuration.h"
 #include "binary.h"
 
 
-#define DECLARE_GET_X_t(x) 				\
-	x ## _t get_ ## x (FILE *i_f) {		\
-		x ## _t r;				\
-							\
-		if (fread(&r, sizeof(r), 1, i_f) < 1)	\
-			assert (!ferror(i_f));		\
-							\
-		return r;				\
+#define DECLARE_GET_X_t(x) 								\
+	x ## _t get_ ## x (FILE *i_f, char realtime) {					\
+		x ## _t r;								\
+											\
+											\
+		if (fread(&r, sizeof(r), 1, i_f) < 1) {					\
+			if (feof(i_f)) {						\
+				if (realtime) {						\
+					do {						\
+						usleep(RETRY_DELAY_USECS);		\
+						clearerr(i_f);				\
+						if (fread(&r, sizeof(r), 1, i_f) < 1 && !feof(i_f))\
+							assert (ferror(i_f));		\
+						return r;				\
+					} while (feof(i_f));				\
+				}							\
+			}								\
+			assert (ferror(i_f));						\
+		}									\
+											\
+		return r;								\
 	}
 
 DECLARE_GET_X_t(uint64);
 DECLARE_GET_X_t(uint32);
-//DECLARE_GET_X_t(uint16);
-//DECLARE_GET_X_t(uint8);
+DECLARE_GET_X_t(uint16);
+DECLARE_GET_X_t(uint8);
 
