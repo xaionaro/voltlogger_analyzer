@@ -23,6 +23,7 @@ objs=\
 error.o\
 malloc.o\
 pthreadex.o\
+analyzer.o\
 analyzer_root.o\
 main.o\
 binary.o\

@@ -18,4 +18,4 @@
  */
 
 
-extern void vl_analyze_sin(FILE *in, FILE *out, float frequency);
+extern void vl_analyze_sin(FILE *in, FILE *out, char *checkpointfile, int concurrency, float frequency, double error_threshold, char realtime);

@@ -29,7 +29,7 @@
 #include <assert.h>
 
 #include "error.h"
-#include "analyzer_root.h"
+#include "analyzer.h"
 
 enum functype {
 	FT_SIN
@@ -96,7 +96,7 @@ int main(int argc, char *argv[]) {
 
 	switch (functype) {
 		case FT_SIN:
-			root_analyze_sin(input, stdout, checkpointpath, concurrency, frequency, 50, realtime);
+			vl_analyze_sin(input, stdout, checkpointpath, concurrency, frequency, 50, realtime);
 			break;
 		default:
 			fprintf(stderr, "Unknown approximation function\n");
