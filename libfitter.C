@@ -20,6 +20,7 @@
 
 #include <TGraph.h>
 #include <TF1.h>
+#include <TVirtualFitter.h>
 #include <math.h>
 #include <stdlib.h>
 
@@ -48,6 +49,10 @@ static double phase   = -1;
 int
 fitter_init(uint64_t history_size, double *par) {
 	int i = 0;
+
+	TVirtualFitter::SetDefaultFitter("Minuit2");
+	//TVirtualFitter::SetPrecision(1E-4);
+	//TVirtualFitter::SetMaxIterations(100);
 
 	while (i < MAX_THREADS) {
 		gr[i] = new TGraph(history_size);

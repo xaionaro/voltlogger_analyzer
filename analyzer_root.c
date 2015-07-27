@@ -126,7 +126,7 @@ int root_realcheck_sin(int proc_id, int concurrency, char *checkpointpath, histo
 		while (proc_id != procs_meta->canprint_proc);
 
 		while (i < value_history_filled) {
-			printf("Z\t%lu\t%lu\t%u\t%lf\t%lf\t%lf\t%lf\t%lf\n", value_history[i].row.unixTSNano, value_history[i].row.sensorTS, value_history[i].row.value, error, par[0], par[1], par[2], par[3]);
+			printf("Z\t%lu\t%lu\t%u\t%lf\t%lf\t%lf\t%lf\t%lf\t%li\n", value_history[i].row.unixTSNano, value_history[i].row.sensorTS, value_history[i].row.value, error, par[0], par[1], par[2], par[3], procs_meta->statistics_events);
 			i++;
 		}
 
