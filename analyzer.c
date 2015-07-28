@@ -144,7 +144,7 @@ int vl_realcheck_sin(history_item_t *value_history, uint64_t value_history_fille
 		//fprintf(stderr, "phase_add_best == %le (%le). sqdeviation_min == %le. scan_interval == %le\n", phase_add_best, phase_add_best_add, sqdeviation_min, scan_interval);
 	}
 
-	double err = sqdeviation_min/value_history_filled/(value_history_filled-1);
+	double err = sqdeviation_min/value_history_filled;///(value_history_filled-1);
 
 	if (err > error_threshold) {
 		p = value_history;
