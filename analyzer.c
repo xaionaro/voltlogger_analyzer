@@ -77,7 +77,7 @@ int vl_realcheck_sin(history_item_t *value_history, uint64_t value_history_fille
 
 	double lambda_expected = 2*M_PI / 20000;
 
-	if (lambda < lambda_expected*0.85) {
+	if (lambda < lambda_expected*0.95) {
 		p = value_history;
 		while (p <= e) {
 			printf("Z\t%lu\t%lu\t%u\t%lf\t%lf\t%lf\t%lf\t%lf\n", p->row.unixTSNano, p->row.sensorTS, p->row.value, (double)-1, amp, lambda, NAN, y_avg);
@@ -178,6 +178,7 @@ int vl_check_sin(history_item_t *value_history, uint64_t *value_history_filled_p
 static inline void vl_analize(FILE *i_f, FILE *o_f, char *checkpointfile, int concurrency, void *arg, vl_checkfunct_t checkfunct, double error_threshold, char realtime) {
 	history_item_t *value_history, *history_item_ptr;
 	uint64_t        value_history_filled = 0;
+	static uint64_t unixTSNano_prev = 0;
 
 	value_history = xcalloc(MAX_HISTORY, sizeof(*value_history));
 
@@ -186,7 +187,19 @@ static inline void vl_analize(FILE *i_f, FILE *o_f, char *checkpointfile, int co
 
 		history_item_ptr = &value_history[ value_history_filled++ ];
 
-		history_item_ptr->row.unixTSNano = get_uint64(i_f, realtime);
+		while(1) {
+			long pos = ftell(i_f);
+
+			history_item_ptr->row.unixTSNano = get_uint64(i_f, realtime);
+			if (unixTSNano_prev != 0 && llabs((int64_t)history_item_ptr->row.unixTSNano - (int64_t)unixTSNano_prev) > 1E9*1E8) {
+				fprintf(stderr, "Wrong unixTSNano\n");
+				fseek(i_f, pos+1, SEEK_SET);
+				continue;
+			}
+
+			break;
+		}
+
 		history_item_ptr->row.sensorTS   = get_uint64(i_f, realtime);
 		history_item_ptr->row.value      = get_uint32(i_f, realtime);
 
