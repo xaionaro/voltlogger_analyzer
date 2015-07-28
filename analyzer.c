@@ -75,6 +75,17 @@ int vl_realcheck_sin(history_item_t *value_history, uint64_t value_history_fille
 	double lambda = (double)2*M_PI / sensorTSDiff_total;
 	double amp    = sqrt(y_int / M_PI);
 
+	double lambda_expected = 2*M_PI / 20000;
+
+	if (lambda < lambda_expected*0.85) {
+		p = value_history;
+		while (p <= e) {
+			printf("Z\t%lu\t%lu\t%u\t%lf\t%lf\t%lf\t%lf\t%lf\n", p->row.unixTSNano, p->row.sensorTS, p->row.value, (double)-1, amp, lambda, NAN, y_avg);
+			p++;
+		}
+		return 0;
+	}
+
 	// f(x) =  amp * sin(lambda*x + phase) + avg
 	double phase;
 

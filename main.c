@@ -47,6 +47,7 @@ int main(int argc, char *argv[]) {
 	functype_t functype = FT_SIN;
 	char realtime = 0;
 	float frequency = 50;
+	double errorthreshold = 1;
 	int concurrency = 1;
 	char *checkpointpath = NULL;
 	FILE *input = stdin;
@@ -63,7 +64,7 @@ int main(int argc, char *argv[]) {
 
 	// Parsing arguments
 	char c;
-	while ((c = getopt (argc, argv, "ri:f:F:c:C:")) != -1) {
+	while ((c = getopt (argc, argv, "ri:f:F:c:C:e:")) != -1) {
 		char *arg;
 		arg = optarg;
 
@@ -89,6 +90,9 @@ int main(int argc, char *argv[]) {
 			case 'i':
 				assert ((input = fopen(arg, "r")) != NULL);
 				break;
+			case 'e':
+				errorthreshold = atof(optarg);
+				break;
 			default:
 				abort ();
 		}
@@ -96,7 +100,7 @@ int main(int argc, char *argv[]) {
 
 	switch (functype) {
 		case FT_SIN:
-			vl_analyze_sin(input, stdout, checkpointpath, concurrency, frequency, 1, realtime);
+			vl_analyze_sin(input, stdout, checkpointpath, concurrency, frequency, errorthreshold, realtime);
 			break;
 		default:
 			fprintf(stderr, "Unknown approximation function\n");
