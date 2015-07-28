@@ -1,5 +1,5 @@
 /*
-    voltlogger_oscilloscope
+    voltlogger_analyzer
     
     Copyright (C) 2015 Dmitry Yu Okunev <dyokunev@ut.mephi.ru> 0x8E30679C
     
