@@ -197,6 +197,8 @@ static inline void vl_analize(FILE *i_f, FILE *o_f, char *checkpointfile, int co
 				continue;
 			}
 
+			unixTSNano_prev = history_item_ptr->row.unixTSNano;
+
 			break;
 		}
 
